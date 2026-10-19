@@ -1,0 +1,109 @@
+﻿services:
+  aspire-dashboard:
+    container_name: "aspire-dashboard"
+    image: "mcr.microsoft.com/dotnet/aspire-dashboard:9.0"
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+    - target: 18888
+      published: 18888
+    restart: unless-stopped
+  postgres:
+    container_name: "postgres"
+    image: "docker.1ms.run/library/postgres:18.3"
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      POSTGRES_USER: "postgres"
+      POSTGRES_DB: "ctfdb"
+      POSTGRES_PASSWORD: "pFvFNThZEXrUZtd3mLDHVo"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_SERVICE_NAME: "postgres"
+    volumes:
+    - "ctf-postgres-data:/var/lib/postgresql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ctfdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+    - target: 5432
+      published: 5432
+    restart: unless-stopped
+  demo-target:
+    container_name: "demo-target"
+    build:
+      context: "../samples/demo-web-sqli"
+      dockerfile: "Dockerfile"
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_SERVICE_NAME: "demo-target"
+    ports:
+    - target: 8088
+      published: 8088
+    restart: unless-stopped
+  apiservice:
+    container_name: "apiservice"
+    build:
+      context: ".."
+      dockerfile: "AspireCTF.Api/Dockerfile"
+    environment:
+      SANDBOX_IMAGE: "ctf-opencode-sandbox:latest"
+      SANDBOX_BASE_REGISTRY: "docker.1ms.run"
+      Sandbox__Image: "ctf-opencode-sandbox:latest"
+      Sandbox__Provider: "PodmanApi"
+      Sandbox__Endpoint: "unix:///run/podman/podman.sock"
+      Sandbox__WorkspacesRoot: "/data/workspaces"
+      Catalog__SamplesPath: "/opt/catalog"
+      ConnectionStrings__ctfdb: "Host=postgres;Port=5432;Username=postgres;Password=pFvFNThZEXrUZtd3mLDHVo;Database=ctfdb"
+      CTFDB_HOST: "postgres"
+      CTFDB_PORT: "5432"
+      CTFDB_USERNAME: "postgres"
+      CTFDB_PASSWORD: "pFvFNThZEXrUZtd3mLDHVo"
+      CTFDB_DATABASENAME: "ctfdb"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_SERVICE_NAME: "apiservice"
+    volumes:
+    - "ctf-podman-storage:/var/lib/containers"
+    - "ctf-workspaces:/data/workspaces"
+    - "ctf-api-keys:/app/data-protection-keys"
+    privileged: true
+    security_opt:
+      - label=disable
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      demo-target:
+        condition: service_started
+    restart: unless-stopped
+  web:
+    container_name: "web"
+    build:
+      context: ".."
+      dockerfile: "AspireCTF.Web/Dockerfile"
+    environment:
+      ApiBaseUrl: "http://apiservice:8080"
+      ConnectionStrings__ctfdb: "Host=postgres;Port=5432;Username=postgres;Password=pFvFNThZEXrUZtd3mLDHVo;Database=ctfdb"
+      CTFDB_HOST: "postgres"
+      CTFDB_PORT: "5432"
+      CTFDB_USERNAME: "postgres"
+      CTFDB_PASSWORD: "pFvFNThZEXrUZtd3mLDHVo"
+      CTFDB_DATABASENAME: "ctfdb"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_SERVICE_NAME: "web"
+    ports:
+    - target: 8080
+      published: 8080
+    depends_on:
+      apiservice:
+        condition: service_started
+    restart: unless-stopped
+volumes:
+  ctf-postgres-data: {}
+  ctf-podman-storage: {}
+  ctf-workspaces: {}
+  ctf-api-keys: {}

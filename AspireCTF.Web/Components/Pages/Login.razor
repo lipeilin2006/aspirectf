@@ -1,0 +1,37 @@
+@page "/login"
+@layout EmptyLayout
+
+<PageTitle>登录 - AspireCTF</PageTitle>
+
+<div class="login-shell">
+    <MudPaper Class="login-card" Elevation="8">
+        <MudText Typo="Typo.h4" Class="mb-2">AspireCTF</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">OpenCode 自动解题平台</MudText>
+        @if (_error)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">用户名或密码错误或请求验证失败</MudAlert>
+        }
+        <form method="post" action="/account/login" onsubmit="return ctf.prepareLogin(this)">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="powNonce" value="@_powNonce" />
+            <input type="hidden" name="powCounter" value="" />
+            <label for="username">用户名</label>
+            <input id="username" name="username" class="mud-input-text mud-input-outlined mb-4" required="required" />
+            <label for="password">密码</label>
+            <input id="password" name="password" type="password" class="mud-input-text mud-input-outlined mb-5" required="required" />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true">登录</MudButton>
+        </form>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4">默认账号：admin / admin</MudText>
+    </MudPaper>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    private bool _error => Error is "1" or "pow";
+    private string _powNonce { get; } = Guid.NewGuid().ToString("N");
+}

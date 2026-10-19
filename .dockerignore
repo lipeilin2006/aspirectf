@@ -1,0 +1,16 @@
+.git
+.vs
+.gitignore
+**/bin
+**/obj
+**/node_modules
+**/.idea
+**/*.user
+**/.env
+deploy/.env
+AspireCTF.slnx
+aspire.config.json
+README.md
+scripts/*.log
+start.*
+stop.*

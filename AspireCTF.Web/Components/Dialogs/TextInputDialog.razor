@@ -1,0 +1,14 @@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">@Title</MudText></TitleContent>
+    <DialogContent><MudTextField T="string" Label="@Label" Lines="5" Variant="Variant.Outlined" @bind-Value="Value" AutoFocus="true" /></DialogContent>
+    <DialogActions><MudButton OnClick="Cancel">取消</MudButton><MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">确定</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Title { get; set; } = "输入";
+    [Parameter] public string Label { get; set; } = "内容";
+    private string Value { get; set; } = "";
+    private void Cancel() => Dialog.Cancel();
+    private void Submit() => Dialog.Close(DialogResult.Ok(Value));
+}

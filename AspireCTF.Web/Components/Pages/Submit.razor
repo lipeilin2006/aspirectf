@@ -1,0 +1,244 @@
+@page "/submit"
+@attribute [Authorize]
+@inject CtfApi Api
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>提交题目 - AspireCTF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">NEW OPERATION / 02</div>
+        <h1>提交题目</h1>
+        <p class="page-lead">配置一项新的自动化解题任务，系统会为它创建独立沙箱。</p>
+    </div>
+</div>
+
+<div class="submit-panel">
+    <div class="form-row">
+        <label>题库题目</label>
+        <MudSelect T="string" Label="选择题目" Variant="Variant.Outlined"
+                   Value="_challengeId" ValueChanged="OnChallengeChanged">
+            <MudSelectItem T="string" Value="@string.Empty">— 自定义题目 —</MudSelectItem>
+            @foreach (var c in _catalog)
+            {
+                <MudSelectItem T="string" Value="@c.Id">@c.Name（@c.Category）</MudSelectItem>
+            }
+        </MudSelect>
+        @if (!string.IsNullOrEmpty(_description))
+        {
+            <div class="hint">@_description</div>
+        }
+    </div>
+
+    <div class="form-grid">
+        <div class="form-row">
+            <label>任务名称</label>
+            <MudTextField T="string" Label="任务名称" Variant="Variant.Outlined" @bind-Value="_name" Placeholder="例如：Weekly Web #3 SQLi" />
+        </div>
+        <div class="form-row">
+            <label>题目类别</label>
+            <MudTextField T="string" Label="题目类别" Variant="Variant.Outlined" @bind-Value="_category" Placeholder="web / pwn / crypto..." />
+        </div>
+    </div>
+
+    <div class="form-row">
+        <label>题目详情</label>
+        <MudTextField T="string" Label="题目详情" Variant="Variant.Outlined" Lines="4" @bind-Value="_description"
+                      Placeholder="描述漏洞类型、环境、已知信息和解题目标" />
+    </div>
+
+    <div class="form-row">
+        <label>靶场地址</label>
+        <MudTextField T="string" Label="靶场地址（可选）" Variant="Variant.Outlined" @bind-Value="_targetUrl" Placeholder="没有靶场地址可留空" />
+    </div>
+
+    <div class="form-row">
+        <label>OpenCode 模型</label>
+        <MudAutocomplete T="ConfiguredModelDto" Label="OpenCode 模型（必选，输入可搜索）" Required="true" Variant="Variant.Outlined"
+                         Value="_selectedModel" ValueChanged="OnModelSelected"
+                         SearchFunc="SearchModels" ToStringFunc="@(m => m is null ? "" : $"{m.Label}（{m.ProviderLabel}）")"
+                         MaxItems="300" ResetValueOnEmptyText="true">
+            <ItemTemplate>
+                <div class="d-flex flex-column py-1">
+                    <MudText Typo="Typo.body2">@context.Label</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ProviderLabel · @context.Source@(context.IsFree ? " · 免费" : "")</MudText>
+                </div>
+            </ItemTemplate>
+        </MudAutocomplete>
+        <div class="hint">按 Provider 分组，输入模型名或 Provider 名搜索。选中后显示「模型名（Provider）」。</div>
+    </div>
+
+    <div class="form-row">
+        <label>题目源码附件（zip，可选）</label>
+        <div class="@(string.IsNullOrEmpty(_zipFileName) ? "upload-zone" : "upload-zone upload-selected")">
+            <InputFile id="source-upload" class="upload-input" OnChange="OnFileSelected" accept=".zip" />
+            <label for="source-upload" class="upload-action">
+                <MudIcon Icon="@Icons.Material.Outlined.UploadFile" Size="Size.Medium" />
+                <span>@(_file is null ? "选择 ZIP 文件" : "更换文件")</span>
+            </label>
+            <span class="upload-hint">最大 200 MB，仅支持 .zip</span>
+        </div>
+        @if (_zipFileName is not null)
+        {
+            <div class="selected-file">
+                <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" />
+                <span>@_zipFileName</span>
+                <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" Color="Color.Error" OnClick="ClearFile" />
+            </div>
+        }
+    </div>
+
+    <div class="form-row">
+        <label>自定义提示词（可选，留空使用默认模板）</label>
+        <MudTextField T="string" Label="自定义提示词（可选）" Variant="Variant.Outlined" Lines="5" @bind-Value="_prompt"
+                      Placeholder="{0}=名称 {1}=类别 {2}=靶场地址"></MudTextField>
+    </div>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error">@_error</MudAlert>
+    }
+
+    <div class="form-actions">
+        @if (_sandbox is not null && !_sandbox.SandboxReady)
+        {
+            <MudAlert Severity="Severity.Warning">@_sandbox.SandboxMessage</MudAlert>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitAsync" Disabled="@(_submitting || (_sandbox is not null && !_sandbox.SandboxReady))">
+            @(_submitting ? "提交中..." : "提交并开始解题")
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    private List<ChallengeCatalogEntry> _catalog = [];
+    private List<ConfiguredModelDto> _models = [];
+    private string _challengeId = "";
+    private string _name = "";
+    private string _category = "web";
+    private string _description = "";
+    private string _targetUrl = "";
+    private string _model = "";
+    private ConfiguredModelDto? _selectedModel;
+    private string _prompt = "";
+    private IBrowserFile? _file;
+    private string? _zipFileName;
+    private bool _submitting;
+    private string? _error;
+    private SystemInfoDto? _sandbox;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _catalog = await Api.GetChallengesAsync();
+        _models = await Api.GetModelsAsync();
+        _sandbox = await Api.GetSystemInfoAsync();
+    }
+
+    private Task<IEnumerable<ConfiguredModelDto>> SearchModels(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult<IEnumerable<ConfiguredModelDto>>(_models);
+        var v = value.Trim();
+        return Task.FromResult<IEnumerable<ConfiguredModelDto>>(
+            _models.Where(m =>
+                m.Label.Contains(v, StringComparison.OrdinalIgnoreCase)
+                || m.ProviderLabel.Contains(v, StringComparison.OrdinalIgnoreCase)
+                || m.Id.Contains(v, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private void OnModelSelected(ConfiguredModelDto? value)
+    {
+        _selectedModel = value;
+        _model = value?.Id ?? "";
+    }
+
+    private void OnChallengeChanged(string value)
+    {
+        _challengeId = value;
+        var entry = _catalog.FirstOrDefault(c => c.Id == _challengeId);
+        if (entry is null)
+        {
+            _description = "";
+            return;
+        }
+
+        _name = entry.Name;
+        _category = entry.Category;
+        _targetUrl = entry.TargetUrl;
+        _description = entry.Description;
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _file = e.File;
+        _zipFileName = e.File.Name;
+    }
+
+    private void ClearFile()
+    {
+        _file = null;
+        _zipFileName = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_name) && string.IsNullOrWhiteSpace(_challengeId))
+        {
+            _error = "请填写任务名称或选择题库题目";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_model))
+        {
+            _error = "请选择一个 OpenCode 模型";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var username = (await AuthState.GetAuthenticationStateAsync()).User.Identity?.Name ?? "admin";
+            ChallengeTaskDto? task;
+            if (_file is not null)
+            {
+                await using var stream = _file.OpenReadStream(maxAllowedSize: 200 * 1024 * 1024);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                ms.Position = 0;
+                task = await Api.SubmitZipAsync(_name, _category, _description, _targetUrl, _prompt, _model, _challengeId, username, ms, _file.Name);
+            }
+            else
+            {
+                task = await Api.SubmitAsync(new SubmitTaskRequest
+                {
+                    Name = _name,
+                    CreatedBy = username,
+                    Category = _category,
+                    Description = _description,
+                    TargetUrl = _targetUrl,
+                    Prompt = _prompt,
+                    Model = _model,
+                    ChallengeId = _challengeId
+                });
+            }
+
+            if (task is null)
+            {
+                _error = "提交失败，请检查 Orchestrator API 是否可用";
+                return;
+            }
+
+            Nav.NavigateTo($"/tasks/{task.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"提交异常：{ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

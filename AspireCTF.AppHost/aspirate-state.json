@@ -1,0 +1,18 @@
+{
+  "projectPath": "D:\\AspireCTF\\AspireCTF.AppHost",
+  "outputPath": "D:\\AspireCTF\\deploy",
+  "containerRegistry": "docker.1ms.run",
+  "containerImageTags": [
+    "latest"
+  ],
+  "composeBuilds": [
+    "apiservice",
+    "web",
+    "demo-target"
+  ],
+  "containerBuilder": "docker",
+  "outputFormat": "compose",
+  "disableSecrets": true,
+  "privateRegistryEmail": "aspir8@aka.ms",
+  "includeDashboard": true
+}

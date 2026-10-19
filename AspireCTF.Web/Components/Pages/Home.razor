@@ -1,0 +1,164 @@
+@page "/"
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject CtfApi Api
+@inject NavigationManager Nav
+
+<PageTitle>任务看板 - AspireCTF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">MISSION CONTROL / 01</div>
+        <h1>任务看板</h1>
+        <p class="page-lead">观察自动化解题任务，追踪沙箱执行状态与实时输出。</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn" @onclick="ReloadAsync" disabled="@_loading">刷新</button>
+        <NavLink class="btn btn-primary" href="/submit">提交新题</NavLink>
+    </div>
+</div>
+
+@if (_apiError is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">
+        @_apiError
+        <MudButton Variant="Variant.Text" OnClick="ReloadAsync" Disabled="@_loading">重试</MudButton>
+    </MudAlert>
+}
+
+@if (_info is not null)
+{
+    <div class="stat-row">
+        <div class="stat-card">
+            <div class="stat-label">执行器</div>
+            <div class="stat-value">@_info.Executor</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">运行中 / 上限</div>
+            <div class="stat-value">@_info.Running / @_info.MaxConcurrent</div>
+            <div class="meter"><div class="meter-fill" style="width: @(_info.MaxConcurrent == 0 ? 0 : _info.Running * 100 / _info.MaxConcurrent)%"></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">排队中</div>
+            <div class="stat-value">@_info.QueueLength</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">沙箱镜像</div>
+            <div class="stat-value small">@_info.SandboxImage</div>
+            <div class="sandbox-status @(_info.SandboxReady ? "sandbox-ready" : "sandbox-building")">
+                <span class="status-dot"></span>@_info.SandboxMessage
+            </div>
+            @if (!_info.SandboxReady && _info.SandboxBuildOutput.Length > 0)
+            {
+                <pre class="sandbox-build-output">@string.Join(Environment.NewLine, _info.SandboxBuildOutput)</pre>
+            }
+        </div>
+    </div>
+}
+
+@if (_tasks.Count == 0)
+{
+    <div class="empty">
+        <p>还没有解题任务。@( _loading ? "加载中..." : "点击「提交新题」开始。")</p>
+    </div>
+}
+else
+{
+    <div class="task-grid">
+        @foreach (var task in _tasks)
+        {
+            <TaskCard Task="task" />
+        }
+    </div>
+}
+
+@code {
+    private readonly List<ChallengeTaskDto> _tasks = [];
+    private SystemInfoDto? _info;
+    private bool _loading;
+    private string? _apiError;
+    private readonly CancellationTokenSource _refreshCts = new();
+    private Task? _refreshTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _refreshTask = RefreshLoopAsync(_refreshCts.Token);
+
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _apiError = null;
+        try
+        {
+            var tasks = await Api.GetTasksAsync();
+            _tasks.Clear();
+            _tasks.AddRange(tasks);
+            _info = await Api.GetSystemInfoAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _apiError = $"Orchestrator API 暂时不可用：{ex.Message}";
+        }
+        catch (TaskCanceledException)
+        {
+            _apiError = "Orchestrator API 请求超时，请稍后重试。";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        // 轮询循环必须永远不能退出：任何异常（网络、JSON、Blazor 生命周期）
+        // 都在本轮捕获后继续下一轮，否则页面只能手动刷新。
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    try
+                    {
+                            var tasks = await Api.GetTasksAsync(ct);
+                            _tasks.Clear();
+                            _tasks.AddRange(tasks);
+                            _info = await Api.GetSystemInfoAsync(ct);
+                            _apiError = null;
+                            StateHasChanged();
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+                    catch (Exception ex)
+                    {
+                        _apiError = $"刷新失败（将自动重试）：{ex.Message}";
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Circuit 可能尚未就绪或组件正在释放，忽略并继续
+                _ = ex;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _refreshCts.Cancel();
+        try { if (_refreshTask is not null) await _refreshTask; } catch { /* circuit teardown */ }
+        _refreshCts.Dispose();
+    }
+}

@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="AspireCTF.Contracts/AspireCTF.Contracts.csproj" />
+  <Project Path="AspireCTF.ServiceDefaults/AspireCTF.ServiceDefaults.csproj" />
+  <Project Path="AspireCTF.AppHost/AspireCTF.AppHost.csproj" />
+  <Project Path="AspireCTF.Api/AspireCTF.Api.csproj" />
+  <Project Path="AspireCTF.Web/AspireCTF.Web.csproj" />
+</Solution>

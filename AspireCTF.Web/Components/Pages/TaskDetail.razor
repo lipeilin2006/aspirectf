@@ -1,0 +1,408 @@
+@page "/tasks/{Id}"
+@attribute [Authorize]
+@inject CtfApi Api
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@implements IAsyncDisposable
+
+<PageTitle>@(_task?.Name ?? "任务详情") - AspireCTF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">OPERATION TELEMETRY / 03</div>
+        <h1>@(_task?.Name ?? "任务详情")</h1>
+        <p class="page-lead">任务元数据、容器生命周期与实时终端输出。</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn" @onclick="ReloadAsync">刷新</button>
+        @if (CanManage && IsActive)
+        {
+            <button class="btn btn-danger" @onclick="CancelAsync" disabled="@_cancelling">停止解题</button>
+        }
+        else if (CanManage)
+        {
+            <button class="btn" @onclick="ContinueAsync">追加信息继续</button>
+            <button class="btn btn-danger" @onclick="DeleteAsync">删除任务</button>
+        }
+        <NavLink class="btn" href="/">返回看板</NavLink>
+    </div>
+</div>
+
+@if (_task is null)
+{
+    <div class="empty"><p>加载中...</p></div>
+}
+else
+{
+    <div class="detail-grid">
+        <div class="panel">
+            <div class="panel-title">状态</div>
+            <div class="status-line">
+                <span class="chip chip-@_task.Status.ToLowerInvariant()">@StatusText</span>
+                @if (!string.IsNullOrEmpty(_task.Executor))
+                {
+                    <span class="muted">执行器: @_task.Executor</span>
+                }
+                @if (!string.IsNullOrEmpty(_task.ContainerName))
+                {
+                    <span class="muted">容器: @_task.ContainerName</span>
+                }
+            </div>
+            <dl class="kv">
+                <dt>靶场</dt>
+                <dd>@(_task.TargetUrl)</dd>
+                <dt>类别</dt>
+                <dd>@(_task.Category)</dd>
+                <dt>题目详情</dt>
+                <dd class="task-description">@(_task.Description)</dd>
+                @if (!string.IsNullOrWhiteSpace(_task.Model))
+                {
+                    <dt>模型</dt>
+                    <dd>@_task.Model</dd>
+                }
+                <dt>提交时间</dt>
+                <dd>@_task.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd>
+                @if (_task.StartedAt is not null)
+                {
+                    <dt>开始</dt>
+                    <dd>@_task.StartedAt.Value.ToLocalTime().ToString("HH:mm:ss")</dd>
+                }
+                @if (_task.CompletedAt is not null)
+                {
+                    <dt>结束</dt>
+                    <dd>@_task.CompletedAt.Value.ToLocalTime().ToString("HH:mm:ss")</dd>
+                }
+                <dt>退出码</dt>
+                <dd>@_task.ExitCode</dd>
+            </dl>
+
+            @if (!string.IsNullOrEmpty(_task.Flag))
+            {
+                <div class="flag-panel">
+                    <div class="panel-title">Flag</div>
+                    <code class="flag-value">@_task.Flag</code>
+                    <button class="btn" @onclick="CopyFlag">@_copyLabel</button>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(_task.Error))
+            {
+                <div class="alert alert-error">@_task.Error</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_task.FailureReason))
+            {
+                <div class="failure-panel"><div class="panel-title">失败原因</div><pre>@_task.FailureReason</pre></div>
+            }
+
+            @if (_task.HasWriteup)
+            {
+                <div class="flag-panel">
+                    <div class="panel-title">Writeup</div>
+                    <a class="btn" href="@($"/tasks/{_task.Id}/writeup/download")">下载 writeup.md</a>
+                </div>
+            }
+        </div>
+
+        <div class="panel panel-log">
+            <div class="panel-title">OpenCode 会话 <span class="muted">(@_logs.Count 条)</span></div>
+            <div class="chat-stream" id="log-terminal">@foreach (var item in _chat)
+            {
+                @if (item.Kind == "text")
+                {
+                    <div class="chat-row">
+                        <div class="oc-text">@((MarkupString)ChatBuilder.ToMarkdownHtml(item.Text))</div>
+                    </div>
+                }
+                else if (item.Kind == "reasoning")
+                {
+                    <details class="oc-reasoning">
+                        <summary>思考过程</summary>
+                        @((MarkupString)ChatBuilder.ToMarkdownHtml(item.Text))
+                    </details>
+                }
+                else if (item.Kind == "tool")
+                {
+                    <div class="oc-tool @ToolClass(item)">
+                        <div class="oc-tool-head" @onclick="() => ToggleTool(item)">
+                            <span class="oc-tool-status">@ToolStatusIcon(item)</span>
+                            <span class="oc-tool-title">@(string.IsNullOrEmpty(item.Label) ? item.Tool : item.Label)</span>
+                            <span class="oc-tool-sub">@item.Tool</span>
+                        </div>
+                        @if (item.Args.Count > 0)
+                        {
+                            <div class="oc-tool-args">@foreach (var arg in item.Args)
+                            {
+                                <span class="oc-chip">@arg</span>
+                            }</div>
+                        }
+                        @if (item.Status == "error" && !string.IsNullOrEmpty(item.Err))
+                        {
+                            <div class="oc-tool-error">@item.Err</div>
+                        }
+                        @if (IsToolOpen(item) && !string.IsNullOrEmpty(item.Text))
+                        {
+                            <pre class="oc-tool-output">@item.Text</pre>
+                        }
+                    </div>
+                }
+                else if (item.Kind == "prompt")
+                {
+                    <div class="oc-tool">
+                        <div class="oc-tool-head" @onclick="() => ToggleTool(item)">
+                            <span class="oc-tool-status">@(IsToolOpen(item) ? "▾" : "▸")</span>
+                            <span class="oc-tool-title">实际输入 Prompt</span>
+                            <span class="oc-tool-sub">@item.Text.Length 字符</span>
+                        </div>
+                        @if (IsToolOpen(item))
+                        {
+                            <pre class="oc-tool-output">@item.Text</pre>
+                        }
+                    </div>
+                }
+                else if (item.Kind == "sandbox")
+                {
+                    <details class="oc-meta">
+                        <summary>沙箱启动信息（@item.LineCount 行）</summary>
+                        <pre class="oc-tool-output">@item.Text</pre>
+                    </details>
+                }
+                else if (item.Kind == "error")
+                {
+                    <div class="oc-error">@item.Err</div>
+                }
+                else
+                {
+                    <div class="chat-row chat-@item.Stream.ToLowerInvariant()"><span class="chat-label">@item.Stream</span><div class="chat-bubble">@item.Text</div></div>
+                }
+            }</div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private ChallengeTaskDto? _task;
+    private readonly List<LogLineDto> _logs = [];
+    private List<ChatItem> _chat = [];
+    private readonly HashSet<string> _openTools = [];
+    private bool _cancelling;
+    private string _additionalPrompt = "";
+    private long _lastSeq;
+    private readonly CancellationTokenSource _refreshCts = new();
+    private Task? _refreshTask;
+
+    private bool IsActive => _task?.Status is "Pending" or "Queued" or "Running";
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    private bool CanManage => _task is not null && (_task.CreatedBy == AuthenticationStateTask?.Result.User.Identity?.Name || AuthenticationStateTask?.Result.User.IsInRole("Admin") == true);
+
+    private string StatusText => TaskStatusText.From(_task?.Status ?? "");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _refreshTask ??= RefreshLoopAsync(_refreshCts.Token);
+        var taskRequest = Api.GetTaskAsync(Id);
+        var logsRequest = Api.GetLogsAsync(Id);
+        await Task.WhenAll(taskRequest, logsRequest);
+        _task = await taskRequest;
+        var history = await logsRequest;
+        _logs.Clear();
+        _logs.AddRange(history);
+        if (history.Count > 0)
+        {
+            _lastSeq = history[^1].Seq;
+        }
+
+        RebuildChat();
+
+        // Start polling before SignalR subscription so a slow or failed
+        // websocket connection cannot prevent log/status refresh.
+        await ScrollLogAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Scroll after the DOM actually contains the new output; ctf.scrollLog
+        // only follows when the viewport was already pinned at the bottom.
+        await ScrollLogAsync();
+    }
+
+    private void RebuildChat() => _chat = ChatBuilder.Build(_logs);
+
+    /// <summary>任务已到终态后，仍停留在 running 的工具卡视为已中断（Agent 被终止，不会再有 done 事件）。</summary>
+    private bool TaskFinished => _task is not null && _task.Status is "Succeeded" or "Failed" or "Cancelled" or "TimedOut";
+
+    private string EffectiveToolStatus(ChatItem item)
+        => item.Status == "running" && TaskFinished ? "interrupted" : item.Status;
+
+    private string ToolClass(ChatItem item) => EffectiveToolStatus(item) switch
+    {
+        "error" => "oc-tool-error-card",
+        "interrupted" => "oc-tool-stale",
+        "done" => "oc-tool-done",
+        _ => "oc-tool-running"
+    };
+
+    private string ToolStatusIcon(ChatItem item) => EffectiveToolStatus(item) switch
+    {
+        "error" => "✕",
+        "done" => "✓",
+        "interrupted" => "–",
+        _ => "●"
+    };
+
+    private bool IsToolOpen(ChatItem item)
+        => item.Status == "error" || _openTools.Contains(ToolKey(item));
+
+    private static string ToolKey(ChatItem item) => $"{item.Id}:{item.Tool}:{item.Seq}";
+
+    private void ToggleTool(ChatItem item)
+    {
+        var key = ToolKey(item);
+        if (!_openTools.Remove(key))
+        {
+            _openTools.Add(key);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var taskRequest = Api.GetTaskAsync(Id);
+        var logsRequest = Api.GetLogsAsync(Id, _lastSeq);
+        await Task.WhenAll(taskRequest, logsRequest);
+        _task = await taskRequest;
+        var history = await logsRequest;
+        foreach (var line in history)
+        {
+            _logs.Add(line);
+            _lastSeq = line.Seq;
+        }
+
+        if (history.Count > 0)
+        {
+            RebuildChat();
+        }
+
+        await ScrollLogAsync();
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        // 任何异常都不得终止轮询，否则任务状态与会话输出将停在最后一帧，
+        // 用户只能手动刷新。失败时等待下一轮继续。
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        await ReloadAsync();
+                        // InvokeAsync 的异步回调完成后不会自动重渲染，必须显式通知，
+                        // 否则新日志/状态只停留在内存里，页面永远显示旧数据。
+                        StateHasChanged();
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+                    catch (Exception ex)
+                    {
+                        _ = ex;
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _ = ex;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task ScrollLogAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("ctf.scrollLog", "log-terminal");
+        }
+        catch
+        {
+            // interop may race with prerender/dispose
+        }
+    }
+
+    private async Task<string> CurrentUserAsync()
+        => (await AuthenticationStateTask!).User.Identity?.Name ?? "";
+
+    private async Task CancelAsync()
+    {
+        _cancelling = true;
+        try
+        {
+            await Api.CancelAsync(Id, await CurrentUserAsync());
+        }
+        finally
+        {
+            _cancelling = false;
+        }
+    }
+
+    private async Task ContinueAsync()
+    {
+        var dialog = await DialogService.ShowAsync<TextInputDialog>("追加信息继续", new DialogParameters
+        {
+            [nameof(TextInputDialog.Title)] = "追加解题信息",
+            [nameof(TextInputDialog.Label)] = "追加 Prompt"
+        });
+        var result = await dialog.Result;
+        _additionalPrompt = result is { Canceled: false, Data: string value } ? value : "";
+        if (!string.IsNullOrWhiteSpace(_additionalPrompt)) await Api.ContinueAsync(Id, _additionalPrompt, await CurrentUserAsync());
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await Api.DeleteTaskAsync(Id, await CurrentUserAsync())) Nav.NavigateTo("/");
+    }
+
+    private string _copyLabel = "复制";
+    private int _copyToken;
+
+    private async Task CopyFlag()
+    {
+        if (string.IsNullOrEmpty(_task?.Flag))
+        {
+            return;
+        }
+
+        var ok = await JS.InvokeAsync<bool>("ctf.copyText", _task.Flag);
+        var token = ++_copyToken;
+        _copyLabel = ok ? "已复制" : "复制失败";
+        _ = ResetCopyLabelAsync(token);
+    }
+
+    private async Task ResetCopyLabelAsync(int token)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        if (token != _copyToken)
+        {
+            return; // 用户又点了一次，由新的一轮负责复位
+        }
+
+        _copyLabel = "复制";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _refreshCts.Cancel();
+        try { if (_refreshTask is not null) await _refreshTask; } catch { /* circuit teardown */ }
+        _refreshCts.Dispose();
+    }
+}

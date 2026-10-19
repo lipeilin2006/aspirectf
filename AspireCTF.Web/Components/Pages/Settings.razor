@@ -1,0 +1,146 @@
+@page "/settings"
+@attribute [Authorize(Roles = "Admin")]
+@inject CtfApi Api
+
+<PageTitle>系统设置 - AspireCTF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">SYSTEM CONFIGURATION / 04</div>
+        <h1>系统设置</h1>
+        <p class="page-lead">调整调度器、沙箱和 OpenCode 默认运行参数。</p>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="empty"><p>正在加载设置...</p></div>
+}
+else
+{
+    <div class="settings-grid">
+        <section class="settings-card">
+            <div class="settings-heading"><div><h2>调度器</h2><p>控制并发任务和单题最长运行时间。</p></div></div>
+            <div class="settings-form-grid">
+                <div class="form-row"><label>最大并行任务数</label><input class="input" type="number" min="1" max="32" @bind="_settings.MaxConcurrent" /><span class="hint">范围 1 - 32，保存后立即生效。</span></div>
+                <div class="form-row"><label>单题超时时间（分钟）</label><input class="input" type="number" min="1" max="240" @bind="_settings.TaskTimeoutMinutes" /></div>
+            </div>
+        </section>
+        <section class="settings-card settings-wide">
+            <div class="settings-heading"><div><h2>OpenCode</h2><p>按 OpenCode 配置格式维护 Provider、API 地址、密钥和模型。任务创建时选择具体模型。</p></div></div>
+            <div class="form-row"><label>opencode.json</label><textarea class="input textarea code-editor" rows="16" @bind="_settings.OpenCodeConfigJson"></textarea><span class="hint">配置结构：provider → provider名称 → models → 模型名称。API Key 仍通过环境变量传入。</span></div>
+            <div class="form-row"><label>默认 Prompt 模板</label><textarea class="input textarea" rows="14" @bind="_settings.PromptTemplate"></textarea><span class="hint">当前显示的是生效值；清空保存则回到内置默认模板。可用占位符：{0}=名称，{1}=类别，{2}=靶场地址，{3}=题目详情（模板未含 {3} 时会自动附加到末尾）。</span></div>
+        </section>
+        <section class="settings-card settings-wide">
+            <div class="settings-heading"><div><h2>AI Provider API Key</h2><p>密钥只在服务端加密保存并注入沙箱环境。已配置的密钥不会回显。Provider 目录来自 models.dev（运行时拉取）。</p></div></div>
+            <div class="settings-form-grid api-key-add">
+                <MudAutocomplete T="ProviderOptionDto" Label="Provider（输入可搜索）" Variant="Variant.Outlined"
+                                 Value="_selectedProvider" ValueChanged="OnProviderSelected"
+                                 SearchFunc="SearchProviders" ToStringFunc="@(p => p?.Name ?? "")"
+                                 MaxItems="80" ResetValueOnEmptyText="true">
+                    <ItemTemplate>
+                        <MudText Typo="Typo.body2">@context.Name <MudText Typo="Typo.caption" Inline="true" Color="Color.Secondary"> @context.Id</MudText></MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@string.Join(", ", context.Env) · @context.ModelCount 模型</MudText>
+                    </ItemTemplate>
+                </MudAutocomplete>
+                <MudTextField T="string" Label="API Key" Variant="Variant.Outlined" InputType="InputType.Password" @bind-Value="_newApiKey" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddApiKeyAsync" Disabled="@(_saving || _selectedProvider is null)">添加</MudButton>
+            </div>
+            @if (_selectedProvider is not null)
+            {
+                <div class="hint" style="margin-top:4px">
+                    将写入环境变量：<code>@string.Join(", ", _selectedProvider.Env)</code>
+                    @if (!string.IsNullOrWhiteSpace(_selectedProvider.Doc)) { <span> · <a href="@_selectedProvider.Doc" target="_blank" rel="noopener">文档</a></span> }
+                </div>
+            }
+            <div class="provider-key-list">
+                @foreach (var key in _apiKeys.Where(x => x.Configured))
+                {
+                    <div class="provider-key-row"><div><b>@key.Label</b><span class="key-state">@(key.Configured ? "已配置" : "未配置")</span><small>@key.Provider</small></div><MudButton Color="Color.Error" Variant="Variant.Text" Size="Size.Small" OnClick="@(() => RemoveApiKeyAsync(key.Provider))">删除</MudButton></div>
+                }
+            </div>
+        </section>
+    </div>
+    @if (_message is not null) { <div class="alert alert-success">@_message</div> }
+    @if (_error is not null) { <div class="alert alert-error">@_error</div> }
+    <div class="form-actions settings-actions"><button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "保存中..." : "保存设置")</button><button class="btn" @onclick="ResetAsync" disabled="@_saving">重新加载</button></div>
+}
+
+@code {
+    private PlatformSettingsDto _settings = new();
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private string? _error;
+    private List<ApiKeyStatusDto> _apiKeys = [];
+    private List<ProviderOptionDto> _providers = [];
+    private ProviderOptionDto? _selectedProvider;
+    private string _newApiKey = "";
+
+    protected override async Task OnInitializedAsync() => await ResetAsync();
+
+    private async Task ResetAsync()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            _settings = await Api.GetSettingsAsync() ?? new PlatformSettingsDto();
+            _apiKeys = await Api.GetApiKeysAsync();
+            _providers = await Api.GetProvidersAsync();
+        }
+        catch (Exception ex) { _error = $"加载设置失败：{ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private Task<IEnumerable<ProviderOptionDto>> SearchProviders(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult<IEnumerable<ProviderOptionDto>>(_providers.Take(80));
+        var v = value.Trim();
+        return Task.FromResult<IEnumerable<ProviderOptionDto>>(
+            _providers.Where(p =>
+                    p.Name.Contains(v, StringComparison.OrdinalIgnoreCase)
+                    || p.Id.Contains(v, StringComparison.OrdinalIgnoreCase)
+                    || p.Env.Any(e => e.Contains(v, StringComparison.OrdinalIgnoreCase)))
+                .Take(80));
+    }
+
+    private void OnProviderSelected(ProviderOptionDto? value) => _selectedProvider = value;
+
+    private async Task SaveAsync()
+    {
+        _saving = true; _message = null; _error = null;
+        try
+        {
+            var saved = await Api.UpdateSettingsAsync(_settings);
+            if (saved is null) _error = "保存设置失败。";
+            else { _settings = saved; _message = "设置已保存并立即生效。"; }
+        }
+        catch (Exception ex) { _error = $"保存设置失败：{ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private async Task AddApiKeyAsync()
+    {
+        if (_selectedProvider is null) { _error = "请选择 Provider"; return; }
+        if (string.IsNullOrWhiteSpace(_newApiKey)) { _error = "请输入 API Key"; return; }
+        _saving = true; _error = null;
+        try
+        {
+            // 用 Provider id 提交，服务端解析为 env 变量名存储。
+            _apiKeys = await Api.SetApiKeyAsync(_selectedProvider.Id, _newApiKey);
+            _newApiKey = ""; _selectedProvider = null;
+            _message = "API Key 已保存，模型列表缓存已刷新。";
+        }
+        catch (Exception ex) { _error = $"保存 API Key 失败：{ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private async Task RemoveApiKeyAsync(string provider)
+    {
+        _saving = true; _error = null;
+        try { _apiKeys = await Api.RemoveApiKeyAsync(provider); _message = "API Key 已删除。"; }
+        catch (Exception ex) { _error = $"删除 API Key 失败：{ex.Message}"; }
+        finally { _saving = false; }
+    }
+}

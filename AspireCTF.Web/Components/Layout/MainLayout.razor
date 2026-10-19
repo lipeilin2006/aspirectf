@@ -1,0 +1,112 @@
+@inherits LayoutComponentBase
+@inject CtfApi Api
+@implements IDisposable
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout Class="app-layout">
+    <MudAppBar Elevation="0" Color="Color.Transparent" Class="app-bar">
+        <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" Class="mobile-menu" />
+        <MudText Typo="Typo.overline" Class="app-bar-label">CONTROL ROOM / @DateTime.Now.ToString("yyyy.MM.dd")</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.VerifiedUser">@context.User.Identity?.Name</MudChip>
+                <form method="post" action="/account/logout" class="logout-form">
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small">退出登录</MudButton>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Variant="DrawerVariant.Responsive" Elevation="2" Class="app-drawer">
+        <div class="drawer-brand">
+            <MudAvatar Color="Color.Primary" Size="Size.Large" Variant="Variant.Filled">CTF</MudAvatar>
+            <div><MudText Typo="Typo.h6">AspireCTF</MudText><MudText Typo="Typo.caption">OpenCode 自动解题平台</MudText></div>
+        </div>
+        <MudDivider />
+        <MudNavMenu Class="drawer-nav" Color="Color.Primary">
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">任务看板</MudNavLink>
+            <MudNavLink Href="/submit" Icon="@Icons.Material.Outlined.AddCircleOutline">提交题目</MudNavLink>
+            <MudNavLink Href="/change-password" Icon="@Icons.Material.Outlined.Password">修改密码</MudNavLink>
+            <AuthorizeView Roles="Admin"><MudNavLink Href="/users" Icon="@Icons.Material.Outlined.People">用户管理</MudNavLink></AuthorizeView>
+            <AuthorizeView Roles="Admin"><MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">系统设置</MudNavLink></AuthorizeView>
+        </MudNavMenu>
+        <MudSpacer />
+        <div class="drawer-status">
+            @if (_info is not null)
+            {
+                <MudText Typo="Typo.caption">执行器 <b>@_info.Executor</b></MudText>
+                <MudText Typo="Typo.caption">并发 @_info.Running / @_info.MaxConcurrent</MudText>
+                <MudText Typo="Typo.caption">队列 @_info.QueueLength · 共 @_info.TotalTasks 题</MudText>
+                <MudText Typo="Typo.caption">PostgreSQL <span class="@(_info.PostgresConnected ? "status-ok" : "status-bad")">@(_info.PostgresConnected ? "connected" : "offline")</span></MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption">正在加载系统状态...</MudText>
+            }
+        </div>
+    </MudDrawer>
+    <MudMainContent Class="app-main">
+        <div class="content-shell">@Body</div>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private SystemInfoDto? _info;
+    private Timer? _timer;
+    private bool _drawerOpen = true;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#b8ff5c",
+            Secondary = "#6ab5ff",
+            Background = "#080b11",
+            Surface = "#141c2a",
+            DrawerBackground = "#0d1420",
+            AppbarBackground = "#0d1420",
+            TextPrimary = "#f4f7fb",
+            TextSecondary = "#b8c4d6",
+            ActionDefault = "#d8e2f0",
+            Divider = "rgba(164, 184, 214, .2)"
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _info = await Api.GetSystemInfoAsync();
+        }
+        catch
+        {
+            _info = null;
+        }
+
+        _timer = new Timer(async _ =>
+        {
+            try
+            {
+                var info = await Api.GetSystemInfoAsync();
+                await InvokeAsync(() =>
+                {
+                    _info = info;
+                    StateHasChanged();
+                });
+            }
+            catch
+            {
+                // ignore transient failures
+            }
+        }, null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+    }
+
+    public void Dispose() => _timer?.Dispose();
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}

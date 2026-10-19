@@ -1,0 +1,55 @@
+@page "/users"
+@attribute [Authorize(Roles = "Admin")]
+@inject UserService UserStore
+@inject IDialogService DialogService
+
+<PageTitle>用户管理 - AspireCTF</PageTitle>
+<div class="page-head"><div><div class="eyebrow">ACCESS CONTROL / 05</div><h1>用户管理</h1><p class="page-lead">管理员可以新增、删除用户并修改用户密码。</p></div></div>
+
+<div class="settings-card settings-wide">
+    <div class="settings-form-grid">
+        <div class="form-row"><label>用户名</label><input class="input" @bind="_username" /></div>
+        <div class="form-row"><label>初始密码</label><input class="input" type="password" @bind="_password" /></div>
+    </div>
+    <div class="form-actions settings-actions"><button class="btn btn-primary" @onclick="CreateAsync">新增用户</button></div>
+</div>
+@if (_message is not null) { <div class="alert alert-success">@_message</div> }
+@if (_error is not null) { <div class="alert alert-error">@_error</div> }
+<div class="provider-key-list">
+@foreach (var user in _users)
+{
+    <div class="provider-key-row"><div><b>@user.Username</b><small>@(user.IsAdmin ? "管理员" : "普通用户")</small></div><div><button class="btn btn-mini" @onclick="@(() => ResetPasswordAsync(user.Username))">修改密码</button>@if (!user.IsAdmin) { <button class="btn btn-mini btn-danger" @onclick="@(() => DeleteAsync(user.Username))">删除</button> }</div></div>
+}
+</div>
+
+@code {
+    private sealed record UserRow(string Username, bool IsAdmin);
+    private List<UserRow> _users = [];
+    private string _username = "";
+    private string _password = "";
+    private string? _message;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    private async Task ReloadAsync() => _users = (await UserStore.ListAsync()).Select(x => new UserRow(x.Username, x.IsAdmin)).ToList();
+    private async Task CreateAsync()
+    {
+        _error = null; _message = null;
+        if (await UserStore.CreateAsync(_username, _password, false)) { _message = "用户已创建"; _username = ""; _password = ""; await ReloadAsync(); }
+        else _error = "用户名已存在或密码为空";
+    }
+    private async Task ResetPasswordAsync(string username)
+    {
+        var dialog = await DialogService.ShowAsync<PasswordDialog>("修改用户密码", new DialogParameters
+        {
+            [nameof(PasswordDialog.Username)] = username
+        });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string password })
+        {
+            if (await UserStore.SetPasswordAsync(username, password)) _message = "密码已修改";
+            else _error = "密码不能为空";
+        }
+    }
+    private async Task DeleteAsync(string username) { if (await UserStore.DeleteAsync(username)) { _message = "用户已删除"; await ReloadAsync(); } }
+}

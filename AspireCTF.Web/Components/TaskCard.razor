@@ -1,0 +1,72 @@
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="task-card status-@Task.Status.ToLowerInvariant()" @onclick="Open">
+    <div class="task-card-head">
+        <span class="chip chip-@Task.Status.ToLowerInvariant()">@StatusText</span>
+        <span class="category">@Task.Category</span>
+    </div>
+    <h3 class="task-name">@Task.Name</h3>
+    <div class="task-target" title="@Task.TargetUrl">@Task.TargetUrl</div>
+
+    @if (!string.IsNullOrEmpty(Task.Flag))
+    {
+        <div class="flag-badge" @onclick:stopPropagation="true">
+            <code>@Task.Flag</code>
+            <button class="btn-mini" @onclick="CopyFlag">@_copyLabel</button>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(Task.Error))
+    {
+        <div class="task-error">@Task.Error</div>
+    }
+
+    <div class="task-meta">
+        <span>@Task.CreatedAt.ToLocalTime().ToString("HH:mm:ss")</span>
+        @if (Task.Executor is not null)
+        {
+            <span>@Task.Executor</span>
+        }
+        @if (Task.LogCount > 0)
+        {
+            <span>@Task.LogCount 行日志</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ChallengeTaskDto Task { get; set; } = default!;
+
+    private string StatusText => TaskStatusText.From(Task.Status);
+
+    private string _copyLabel = "复制";
+    private int _copyToken;
+
+    private void Open() => Nav.NavigateTo($"/tasks/{Task.Id}");
+
+    private async Task CopyFlag()
+    {
+        if (string.IsNullOrEmpty(Task.Flag))
+        {
+            return;
+        }
+
+        var ok = await JS.InvokeAsync<bool>("ctf.copyText", Task.Flag);
+        var token = ++_copyToken;
+        _copyLabel = ok ? "已复制" : "复制失败";
+        _ = ResetCopyLabelAsync(token);
+    }
+
+    private async Task ResetCopyLabelAsync(int token)
+    {
+        // 注意：本组件的 [Parameter] Task 属性会遮蔽 System.Threading.Tasks.Task 类型
+        await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(1.5));
+        if (token != _copyToken)
+        {
+            return;
+        }
+
+        _copyLabel = "复制";
+        await InvokeAsync(StateHasChanged);
+    }
+}
