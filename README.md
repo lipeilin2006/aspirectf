@@ -127,6 +127,8 @@ curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.bat -o update.ba
 ./aspirectf stop --purge     # 停止并删除数据卷
 ```
 
+如果菜单没有显示，请在终端中运行 `bash ./aspirectf`；Windows 请使用 `aspirectf.bat`。
+
 Windows（cmd）：
 
 ```bat

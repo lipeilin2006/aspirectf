@@ -37,7 +37,6 @@ if [ "$#" -gt 0 ]; then
 fi
 
 while true; do
-  clear 2>/dev/null || true
   echo -e "${CYAN}==========================================${NC}"
   echo -e "${CYAN}  AspireCTF 控制台${NC}"
   echo -e "${CYAN}==========================================${NC}"
@@ -47,7 +46,11 @@ while true; do
   echo "  3) 停止服务（保留数据卷）"
   echo "  0) 退出"
   echo ""
-  read -r -p "请选择 [0-3]: " choice
+  if ! read -r -p "请选择 [0-3]: " choice; then
+    echo ""
+    echo "已退出。"
+    exit 0
+  fi
 
   case "$choice" in
     1)
@@ -69,5 +72,9 @@ while true; do
   esac
 
   echo ""
-  read -r -p "按 Enter 返回菜单..." _
+  if ! read -r -p "按 Enter 返回菜单..." _; then
+    echo ""
+    echo "已退出。"
+    exit 0
+  fi
 done
