@@ -2,7 +2,7 @@
 # ==========================================================
 #  AspireCTF - 一键部署（薄封装）
 #  本地无仓库时 git clone 到 ./aspirectf，然后调用 start.sh 完成部署
-#  一键运行: curl -fsSL https://raw.githubusercontent.com/lipeilin2006/aspirectf/main/deploy.sh | sed 's/\r$//' | bash
+#  一键运行: curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.sh | sed 's/\r$//' | bash
 # ==========================================================
 set -e
 
@@ -11,7 +11,7 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-REPO_URL="https://github.com/lipeilin2006/aspirectf.git"
+REPO_URL="https://gitee.com/li_pilit/aspirectf.git"
 WORK_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=========================================="

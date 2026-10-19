@@ -4,7 +4,7 @@ setlocal
 REM ==========================================================
 REM  AspireCTF - 一键部署（薄封装）
 REM  本地无仓库时 git clone 到 .\aspirectf，然后调用 start.bat 完成部署
-REM  一键运行: curl -fsSL https://raw.githubusercontent.com/lipeilin2006/aspirectf/main/deploy.bat -o deploy.bat && deploy.bat
+REM  一键运行: curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat -o deploy.bat && deploy.bat
 REM ==========================================================
 cd /d "%~dp0"
 
@@ -57,7 +57,7 @@ if exist "%REPO_DIR%\.git" (
     if errorlevel 1 echo [提示] 更新失败，继续使用本地现有版本
 ) else (
     echo [信息] 克隆仓库到 %REPO_DIR% ...
-    git clone https://github.com/lipeilin2006/aspirectf.git "%REPO_DIR%"
+    git clone https://gitee.com/li_pilit/aspirectf.git "%REPO_DIR%"
     if errorlevel 1 (
         echo [错误] 克隆失败，请检查网络连接
         exit /b 1

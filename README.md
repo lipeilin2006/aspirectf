@@ -78,13 +78,13 @@ podman build -t ctf-opencode-sandbox:latest sandbox/
 一键部署（全新服务器 / 任意目录，自动下载仓库到当前目录的 `aspirectf/`）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lipeilin2006/aspirectf/main/deploy.sh | sed 's/\r$//' | bash
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.sh | sed 's/\r$//' | bash
 ```
 
 Windows（cmd，下载 `deploy.bat` 到当前目录并运行）：
 
 ```bat
-curl -fsSL https://raw.githubusercontent.com/lipeilin2006/aspirectf/main/deploy.bat -o deploy.bat && deploy.bat
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat -o deploy.bat && deploy.bat
 ```
 
 脚本流程：检测 Docker / Git 环境 → 本地无仓库时 `git clone` 到当前目录的 `aspirectf/`（已有则 `git pull` 更新；已在仓库目录内则直接用本地文件）→ 调用 `start` 完成 `.env` 生成、镜像构建与启动。端口（`WEB_PORT` 等）与 AI 密钥在 `deploy/.env` 中配置。
