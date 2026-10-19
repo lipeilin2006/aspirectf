@@ -6,7 +6,7 @@
       DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
     ports:
     - target: 18888
-      published: 18888
+      published: "${DASHBOARD_PORT:-18888}"
     restart: unless-stopped
   postgres:
     container_name: "postgres"
@@ -28,7 +28,7 @@
       retries: 12
     ports:
     - target: 5432
-      published: 5432
+      published: "${POSTGRES_PORT:-5432}"
     restart: unless-stopped
   demo-target:
     container_name: "demo-target"
@@ -40,7 +40,7 @@
       OTEL_SERVICE_NAME: "demo-target"
     ports:
     - target: 8088
-      published: 8088
+      published: "${DEMO_PORT:-8088}"
     restart: unless-stopped
   apiservice:
     container_name: "apiservice"
@@ -97,7 +97,7 @@
       OTEL_SERVICE_NAME: "web"
     ports:
     - target: 8080
-      published: 8080
+      published: "${WEB_PORT:-8080}"
     depends_on:
       apiservice:
         condition: service_started
