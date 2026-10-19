@@ -112,6 +112,21 @@ curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.bat -o update.ba
 ./stop.sh           # 或 stop.ps1 / stop.bat：停止（保留数据卷）；--purge / -Purge 连卷删除
 ```
 
+交互式控制台：
+
+```bash
+./aspirectf
+```
+
+也可以直接指定操作：
+
+```bash
+./aspirectf start
+./aspirectf update
+./aspirectf stop             # 保留数据卷
+./aspirectf stop --purge     # 停止并删除数据卷
+```
+
 | 服务 | 宿主端口 |
 |---|---|
 | web | `http://localhost:8080/login`（默认账号 admin / admin） |
