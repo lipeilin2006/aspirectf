@@ -1,128 +1,72 @@
 @echo off
+chcp 65001 >nul
 setlocal
 REM ==========================================================
-REM  AspireCTF - Ò»¼ü²¿Êğ½Å±¾ (Windows)
-REM  ¼ì²é»·¾³ -> Éú³É deploy\.env -> À­È¡»ù´¡¾µÏñ -> ¹¹½¨Ó¦ÓÃ¾µÏñ -> Æô¶¯
-REM  ÓÃ·¨: Ë«»÷ÔËĞĞ£¬»òÔÚ cmd ÖĞÖ´ĞĞ deploy.bat
+REM  AspireCTF - ä¸€é”®éƒ¨ç½²ï¼ˆè–„å°è£…ï¼‰
+REM  æœ¬åœ°æ— ä»“åº“æ—¶ git clone åˆ° .\aspirectfï¼Œç„¶åè°ƒç”¨ start.bat å®Œæˆéƒ¨ç½²
+REM  ä¸€é”®è¿è¡Œ: curl -fsSL https://raw.githubusercontent.com/lipeilin2006/aspirectf/main/deploy.bat -o deploy.bat && deploy.bat
 REM ==========================================================
 cd /d "%~dp0"
 
-set "COMPOSE_FILE=deploy\docker-compose.yaml"
-set "ENV_FILE=deploy\.env"
-
 echo ==========================================
-echo   AspireCTF - Ò»¼ü²¿Êğ
+echo   AspireCTF - ä¸€é”®éƒ¨ç½²
 echo ==========================================
 echo.
 
-REM ========== ¼ì²é»·¾³ ==========
+REM ========== æ£€æŸ¥ç¯å¢ƒ ==========
 where docker >nul 2>&1
 if errorlevel 1 (
-    echo [´íÎó] Docker Î´°²×°£¬ÇëÏÈ°²×° Docker Desktop
-    echo °²×°½Ì³Ì: https://docs.docker.com/get-docker/
+    echo [é”™è¯¯] Docker æœªå®‰è£…ï¼Œè¯·å…ˆå®‰è£… Docker Desktop
+    echo å®‰è£…æ•™ç¨‹: https://docs.docker.com/get-docker/
     exit /b 1
-)
-
-docker compose version >nul 2>&1
-if not errorlevel 1 (
-    set "DC=docker compose"
-) else (
-    where docker-compose >nul 2>&1
-    if errorlevel 1 (
-        echo [´íÎó] Docker Compose Î´°²×°
-        exit /b 1
-    )
-    set "DC=docker-compose"
 )
 
 docker info >nul 2>&1
 if errorlevel 1 (
-    echo [´íÎó] Docker ·şÎñÎ´ÔËĞĞ£¬ÇëÏÈÆô¶¯ Docker Desktop
+    echo [é”™è¯¯] Docker æœåŠ¡æœªè¿è¡Œï¼Œè¯·å…ˆå¯åŠ¨ Docker Desktop
     exit /b 1
 )
 
-echo [ĞÅÏ¢] Docker:  & docker --version
-echo [ĞÅÏ¢] Compose: %DC%
-echo [ĞÅÏ¢] ÏîÄ¿Ä¿Â¼: %CD%
-echo.
-
-REM ========== Ê×´Î²¿ÊğÉú³É .env ==========
-if not exist "%ENV_FILE%" (
-    copy /y "deploy\.env.example" "%ENV_FILE%" >nul
-    echo [ÌáÊ¾] Ê×´Î²¿Êğ£¬´ÓÄ£°åÉú³ÉÅäÖÃ deploy\.env
-    echo [Íê³É] ÒÑÉú³É deploy\.env
-    echo [ÌáÊ¾] ÈçĞèĞŞ¸Ä¶Ë¿Ú»ò AI ÃÜÔ¿£¬Çë±à¼­ deploy\.env ºóÖØĞÂÔËĞĞ±¾½Å±¾
-    echo.
-)
-
-REM ========== ²¿Êğ ==========
-echo [1/4] À­È¡»ù´¡¾µÏñ£¨postgres / aspire-dashboard£¬¾ÉÈİÆ÷±£³ÖÔËĞĞ£©...
-%DC% -f "%COMPOSE_FILE%" pull postgres aspire-dashboard
+docker compose version >nul 2>&1
 if errorlevel 1 (
-    echo [´íÎó] ¾µÏñÀ­È¡Ê§°Ü£¬Çë¼ì²éÍøÂçÁ¬½Ó
+    echo [é”™è¯¯] æœªæ‰¾åˆ° docker composeï¼Œè¯·å®‰è£… Docker Compose æ’ä»¶
     exit /b 1
 )
-echo [Íê³É] »ù´¡¾µÏñÀ­È¡Íê³É
-echo.
 
-echo [2/4] ¹¹½¨Ó¦ÓÃ¾µÏñ£¨apiservice / web / demo-target£©...
-%DC% -f "%COMPOSE_FILE%" build apiservice web demo-target
+where git >nul 2>&1
 if errorlevel 1 (
-    echo [´íÎó] ¾µÏñ¹¹½¨Ê§°Ü£¬Çë¼ì²éÉÏ·½´íÎóÊä³ö
+    echo [é”™è¯¯] æœªæ‰¾åˆ° gitï¼Œè¯·å®‰è£… Git for Windows
     exit /b 1
 )
-echo [Íê³É] Ó¦ÓÃ¾µÏñ¹¹½¨Íê³É
-echo.
 
-echo [3/4] Í£Ö¹¾ÉÈİÆ÷£¨½ö±¾ÏîÄ¿£©...
-%DC% -f "%COMPOSE_FILE%" down --remove-orphans >nul 2>&1
-echo [Íê³É] ¾ÉÈİÆ÷ÒÑÇåÀí
-echo.
+REM ========== å®šä½ä»“åº“ï¼šæœ¬åœ°å·²æœ‰åˆ™ç›´æ¥ç”¨ï¼Œå¦åˆ™ clone åˆ° .\aspirectf ==========
+set "REPO_DIR=%CD%"
+if exist "start.bat" if exist "deploy\docker-compose.yaml" (
+    findstr /c:"aspire-dashboard" "deploy\docker-compose.yaml" >nul 2>&1
+    if not errorlevel 1 goto :have_repo
+)
 
-echo [4/4] Æô¶¯·şÎñ...
-%DC% -f "%COMPOSE_FILE%" up -d
-if errorlevel 1 (
-    echo [´íÎó] ·şÎñÆô¶¯Ê§°Ü£¬²é¿´ÈÕÖ¾: %DC% -f "%COMPOSE_FILE%" logs
+set "REPO_DIR=%CD%\aspirectf"
+if exist "%REPO_DIR%" if not exist "%REPO_DIR%\.git" (
+    echo [é”™è¯¯] %REPO_DIR% å·²å­˜åœ¨ä¸”ä¸æ˜¯ git ä»“åº“ï¼Œè¯·ç§»èµ°è¯¥ç›®å½•æˆ–æ¢ä¸€ä¸ªç›®å½•è¿è¡Œ
     exit /b 1
 )
-echo [Íê³É] ·şÎñÒÑÆô¶¯
-echo.
-
-echo [ĞÅÏ¢] µÈ´ı·şÎñ¾ÍĞ÷...
-timeout /t 10 /nobreak >nul
-%DC% -f "%COMPOSE_FILE%" ps
-echo.
-
-REM ========== ¶ÁÈ¡¶Ë¿ÚÅäÖÃ ==========
-set "WEB_PORT=8080"
-set "DEMO_PORT=8088"
-set "DASHBOARD_PORT=18888"
-set "POSTGRES_PORT=5432"
-if exist "%ENV_FILE%" (
-    for /f "usebackq tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
-        if "%%A"=="WEB_PORT" set "WEB_PORT=%%B"
-        if "%%A"=="DEMO_PORT" set "DEMO_PORT=%%B"
-        if "%%A"=="DASHBOARD_PORT" set "DASHBOARD_PORT=%%B"
-        if "%%A"=="POSTGRES_PORT" set "POSTGRES_PORT=%%B"
+if exist "%REPO_DIR%\.git" (
+    echo [ä¿¡æ¯] %REPO_DIR% å·²å­˜åœ¨ï¼Œgit pull æ›´æ–°...
+    git -C "%REPO_DIR%" pull --ff-only >nul 2>&1
+    if errorlevel 1 echo [æç¤º] æ›´æ–°å¤±è´¥ï¼Œç»§ç»­ä½¿ç”¨æœ¬åœ°ç°æœ‰ç‰ˆæœ¬
+) else (
+    echo [ä¿¡æ¯] å…‹éš†ä»“åº“åˆ° %REPO_DIR% ...
+    git clone https://github.com/lipeilin2006/aspirectf.git "%REPO_DIR%"
+    if errorlevel 1 (
+        echo [é”™è¯¯] å…‹éš†å¤±è´¥ï¼Œè¯·æ£€æŸ¥ç½‘ç»œè¿æ¥
+        exit /b 1
     )
 )
 
-echo ==========================================
-echo   ²¿ÊğÍê³É£¡
-echo ==========================================
+:have_repo
+echo [ä¿¡æ¯] é¡¹ç›®ç›®å½•: %REPO_DIR%
+echo [ä¿¡æ¯] è°ƒç”¨ start.bat å¯åŠ¨...
 echo.
-echo ·şÎñ·ÃÎÊµØÖ·:
-echo   Web:        http://localhost:%WEB_PORT%
-echo   Demo °Ğ³¡:   http://localhost:%DEMO_PORT%/login
-echo   Dashboard:  http://localhost:%DASHBOARD_PORT%
-echo   Postgres:   localhost:%POSTGRES_PORT% (db=ctfdb / user=postgres)
-echo.
-echo ³£ÓÃÃüÁî:
-echo   ²é¿´ÈÕÖ¾: %DC% -f "%COMPOSE_FILE%" logs -f web apiservice
-echo   Í£Ö¹·şÎñ: %DC% -f "%COMPOSE_FILE%" down
-echo   ÖØÆô·şÎñ: %DC% -f "%COMPOSE_FILE%" restart
-echo   ¸üĞÂ°æ±¾: ÖØĞÂÔËĞĞ deploy.bat
-echo.
-echo ÌáÊ¾: Ê×´Î½âÌâÊ±É³Ïä»á×Ô¶¯¹¹½¨ ctf-opencode-sandbox ¾µÏñ (Ô¼ 1-2 ·ÖÖÓ)
-echo.
-exit /b 0
+call "%REPO_DIR%\start.bat" %*
+exit /b %errorlevel%
