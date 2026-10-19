@@ -89,6 +89,22 @@ curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat -o deploy.ba
 
 脚本流程：检测 Docker / Git 环境 → 本地无仓库时 `git clone` 到当前目录的 `aspirectf/`（已有则 `git pull` 更新；已在仓库目录内则直接用本地文件）→ 调用 `start` 完成 `.env` 生成、镜像构建与启动。端口（`WEB_PORT` 等）与 AI 密钥在 `deploy/.env` 中配置。
 
+更新已有部署：
+
+```bash
+./update.sh
+# 或从任意目录执行：
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.sh | sed 's/\r$//' | bash
+```
+
+Windows（cmd）：
+
+```bat
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.bat -o update.bat && update.bat
+```
+
+更新脚本会执行 `git pull --ff-only`，本地存在未提交修改或冲突时会停止，不会覆盖本地代码。
+
 手动启动（已克隆仓库）：
 
 ```bash

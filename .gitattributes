@@ -2,3 +2,4 @@
 *.bat text eol=crlf
 # 一键下载用的 bat：仓库内保留 CRLF（raw 下载后 cmd 可直接运行），编码 UTF-8
 deploy.bat -text
+update.bat -text

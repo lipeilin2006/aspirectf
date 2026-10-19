@@ -52,7 +52,7 @@ else
     fi
     if [ -d "$REPO_DIR/.git" ]; then
         echo -e "${CYAN}[信息] $REPO_DIR 已存在，git pull 更新...${NC}"
-        git -C "$REPO_DIR" pull --ff-only 2>/dev/null || echo -e "${CYAN}[提示] 更新失败，继续使用本地现有版本${NC}"
+        git -C "$REPO_DIR" pull --ff-only "$REPO_URL" main 2>/dev/null || echo -e "${CYAN}[提示] 更新失败，继续使用本地现有版本${NC}"
     else
         echo -e "${CYAN}[信息] 克隆仓库到 $REPO_DIR ...${NC}"
         git clone "$REPO_URL" "$REPO_DIR"
