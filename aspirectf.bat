@@ -11,7 +11,7 @@ if /i "%~1"=="help" goto :usage
 if /i "%~1"=="-h" goto :usage
 
 :usage
-echo 用法: aspirectf.bat [start^|update^|stop] [参数]
+echo Usage: aspirectf.bat [start^|update^|stop] [args]
 echo.
 echo   aspirectf.bat start
 echo   aspirectf.bat update
@@ -21,21 +21,21 @@ exit /b 2
 
 :menu
 echo ==========================================
-echo   AspireCTF 控制台
+echo   AspireCTF Control
 echo ==========================================
 echo.
-echo   1 - 启动 / 重建服务
-echo   2 - 更新代码并重建服务
-echo   3 - 停止服务，保留数据卷
-echo   0 - 退出
+echo   1 - Start or rebuild services
+echo   2 - Update code and rebuild services
+echo   3 - Stop services, keep data
+echo   0 - Exit
 echo.
 set "MENU_CHOICE="
-set /p "MENU_CHOICE=请选择 [0-3]: "
+set /p "MENU_CHOICE=Select [0-3]: "
 if "%MENU_CHOICE%"=="0" exit /b 0
 if "%MENU_CHOICE%"=="1" goto :start
 if "%MENU_CHOICE%"=="2" goto :update
 if "%MENU_CHOICE%"=="3" goto :stop
-echo [提示] 无效选项，请输入 0、1、2 或 3。
+echo [INFO] Invalid option. Enter 0, 1, 2 or 3.
 goto :menu
 
 :start
