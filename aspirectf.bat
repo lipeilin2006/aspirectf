@@ -6,7 +6,7 @@ cd /d "%~dp0"
 if /i "%~1"=="start" goto :start
 if /i "%~1"=="update" goto :update
 if /i "%~1"=="stop" goto :stop
-if /i "%~1"=="" goto :menu
+if "%~1"=="" goto :menu
 if /i "%~1"=="help" goto :usage
 if /i "%~1"=="-h" goto :usage
 
@@ -23,11 +23,20 @@ exit /b 2
 echo ==========================================
 echo   AspireCTF 控制台
 echo ==========================================
-choice /c 1230 /n /m "请选择 [1-3/0]: "
-if errorlevel 4 exit /b 0
-if errorlevel 3 goto :stop
-if errorlevel 2 goto :update
-goto :start
+echo.
+echo   1 - 启动 / 重建服务
+echo   2 - 更新代码并重建服务
+echo   3 - 停止服务，保留数据卷
+echo   0 - 退出
+echo.
+set "MENU_CHOICE="
+set /p "MENU_CHOICE=请选择 [0-3]: "
+if "%MENU_CHOICE%"=="0" exit /b 0
+if "%MENU_CHOICE%"=="1" goto :start
+if "%MENU_CHOICE%"=="2" goto :update
+if "%MENU_CHOICE%"=="3" goto :stop
+echo [提示] 无效选项，请输入 0、1、2 或 3。
+goto :menu
 
 :start
 call "%~dp0start.bat" %~2 %~3 %~4 %~5 %~6 %~7 %~8 %~9

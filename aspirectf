@@ -37,16 +37,17 @@ if [ "$#" -gt 0 ]; then
 fi
 
 while true; do
-  echo -e "${CYAN}==========================================${NC}"
-  echo -e "${CYAN}  AspireCTF 控制台${NC}"
-  echo -e "${CYAN}==========================================${NC}"
+  printf '%s\n' '=========================================='
+  printf '%s\n' '  AspireCTF 控制台'
+  printf '%s\n' '=========================================='
   echo ""
-  echo "  1) 启动 / 重建服务"
-  echo "  2) 更新代码并重建服务"
-  echo "  3) 停止服务（保留数据卷）"
-  echo "  0) 退出"
+  printf '%s\n' '  1) 启动 / 重建服务'
+  printf '%s\n' '  2) 更新代码并重建服务'
+  printf '%s\n' '  3) 停止服务（保留数据卷）'
+  printf '%s\n' '  0) 退出'
   echo ""
-  if ! read -r -p "请选择 [0-3]: " choice; then
+  printf '%s' '请选择 [0-3]: '
+  if ! IFS= read -r choice; then
     echo ""
     echo "已退出。"
     exit 0
