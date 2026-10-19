@@ -26,7 +26,8 @@ public sealed class ChallengeRunnerService : BackgroundService
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
     private readonly DynamicConcurrencyGate _concurrency;
     private readonly SandboxPortLease _ports;
-    private readonly PlatformSettingsService _platformSettings;
+    private readonly ChallengePromptBuilder _promptBuilder;
+    private readonly SandboxEnvironmentBuilder _environmentBuilder;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _publishGates = new();
 
     public ChallengeRunnerService(
@@ -37,7 +38,8 @@ public sealed class ChallengeRunnerService : BackgroundService
         TaskBroadcaster broadcaster,
         DynamicConcurrencyGate concurrency,
         SandboxPortLease ports,
-        PlatformSettingsService platformSettings,
+        ChallengePromptBuilder promptBuilder,
+        SandboxEnvironmentBuilder environmentBuilder,
         IOptions<SandboxOptions> options,
         ILogger<ChallengeRunnerService> logger)
     {
@@ -50,7 +52,8 @@ public sealed class ChallengeRunnerService : BackgroundService
         _logger = logger;
         _concurrency = concurrency;
         _ports = ports;
-        _platformSettings = platformSettings;
+        _promptBuilder = promptBuilder;
+        _environmentBuilder = environmentBuilder;
     }
 
     public int RunningCount => _running.Count;
@@ -142,9 +145,9 @@ public sealed class ChallengeRunnerService : BackgroundService
             _logger.LogInformation("Task {TaskId} marked Running, building sandbox request", taskId);
 
             var workspace = Path.Combine(_workspaces.Root, task.Id);
-            var prompt = BuildPrompt(task);
+            var prompt = _promptBuilder.Build(task);
             var servePort = _ports.Acquire(taskId);
-            var env = BuildEnv(task, prompt, servePort);
+            var env = _environmentBuilder.Build(task, prompt, servePort);
             _logger.LogInformation("Task {TaskId} prompt/env ready, workspace={Workspace} opencodePort={Port}",
                 taskId, workspace, servePort);
 
@@ -231,83 +234,6 @@ public sealed class ChallengeRunnerService : BackgroundService
         }
     }
 
-    private string BuildPrompt(ChallengeTask task)
-    {
-        var template = string.IsNullOrWhiteSpace(task.Prompt) ? _options.PromptTemplate : task.Prompt;
-        var descEmbedded = template.Contains("{3", StringComparison.Ordinal);
-        string prompt;
-        try
-        {
-            prompt = string.Format(template, task.Name, task.Category, task.TargetUrl, task.Description);
-        }
-        catch (FormatException)
-        {
-            // 模板含非法大括号：退回内置模板（含 {3}），保证题目详情仍嵌入正文。
-            descEmbedded = true;
-            try
-            {
-                prompt = string.Format(_options.PromptTemplate, task.Name, task.Category, task.TargetUrl, task.Description);
-            }
-            catch (FormatException)
-            {
-                prompt = $"{_options.PromptTemplate}\n\n【题目详情】\n{task.Description}";
-            }
-        }
-
-        // 老模板没有 {3} 占位符时，题目详情仍附加到末尾，保证不丢失。
-        if (!descEmbedded && !string.IsNullOrWhiteSpace(task.Description))
-            prompt += $"\n\n【题目详情】\n{task.Description}";
-
-        if (!string.IsNullOrWhiteSpace(task.AdditionalPrompt))
-            prompt += $"\n\n【追加信息】\n{task.AdditionalPrompt.Trim()}";
-
-        return prompt;
-    }
-
-    private Dictionary<string, string> BuildEnv(ChallengeTask task, string prompt, int servePort)
-    {
-        var env = new Dictionary<string, string>
-        {
-            ["TASK_ID"] = task.Id,
-            ["TASK_NAME"] = task.Name,
-            ["TARGET_URL"] = task.TargetUrl,
-            ["PROMPT"] = prompt,
-            ["FLAG_PATH"] = "/workspace/flag.txt",
-            ["OPENCODE_SERVE_PORT"] = servePort.ToString(System.Globalization.CultureInfo.InvariantCulture)
-        };
-
-        var config = Environment.GetEnvironmentVariable("OPENCODE_CONFIG_JSON");
-        if (!string.IsNullOrWhiteSpace(config)) env["OPENCODE_CONFIG_CONTENT"] = config;
-
-        // 静态白名单 + 设置页动态配置的 Provider Key 全部透传进沙箱。
-        var passthrough = new HashSet<string>(_options.PassthroughEnvKeys, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in _platformSettings.ConfiguredEnvVarNames) passthrough.Add(key);
-        foreach (var key in passthrough)
-        {
-            var value = Environment.GetEnvironmentVariable(key);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                env[key] = value;
-            }
-        }
-
-        // 任务指定的模型优先于服务端全局 OPENCODE_MODEL。
-        if (!string.IsNullOrWhiteSpace(task.Model))
-        {
-            env["OPENCODE_MODEL"] = task.Model.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(task.SessionId))
-        {
-            env["OPENCODE_SESSION_ID"] = task.SessionId;
-        }
-
-        // Always override the sandbox script default. A value of zero means
-        // OpenCode itself is governed only by the task-level timeout.
-        env["OPENCODE_TIMEOUT_SECONDS"] = Math.Max(0, _options.OpenCodeTimeoutSeconds).ToString();
-
-        return env;
-    }
 
     private sealed class ProgressHandler(Action<SandboxLogEvent> handler) : IProgress<SandboxLogEvent>
     {
@@ -322,7 +248,7 @@ public sealed class ChallengeRunnerService : BackgroundService
         await gate.WaitAsync(CancellationToken.None);
         try
         {
-            var evt = ParseSandboxEvent(line);
+            var evt = SandboxLogEventParser.Parse(line);
             await _broadcaster.LogAsync(taskId, evt, CancellationToken.None);
         }
         catch (Exception ex)
@@ -335,72 +261,4 @@ public sealed class ChallengeRunnerService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// run-challenge.sh 将每个 SSE 事件转成一行 `EVT {json}`。这里把它拆成
-    /// 结构化 Part（供前端按官方 part 模型渲染 Markdown / 工具卡片），
-    /// Text 保留人类可读摘要（旧数据兼容 / 日志检索）。
-    /// </summary>
-    private static SandboxLogEvent ParseSandboxEvent(SandboxLogEvent line)
-    {
-        if (line.Part is not null || !line.Text.StartsWith("EVT ", StringComparison.Ordinal))
-        {
-            return line;
-        }
-
-        var json = line.Text[4..].Trim();
-        if (json.Length == 0)
-        {
-            return line;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var kind = root.TryGetProperty("k", out var k) ? k.GetString() : null;
-            var summary = kind switch
-            {
-                "text" => $"[assistant] {Truncate(SafeString(root, "text"))}",
-                "reasoning" => $"[思考] {Truncate(SafeString(root, "text"))}",
-                "tool" => BuildToolSummary(root),
-                "error" => $"[error] {SafeString(root, "err")}",
-                _ => null
-            };
-
-            if (summary is null)
-            {
-                return line;
-            }
-
-            return new SandboxLogEvent(line.Stream, summary, line.At, json);
-        }
-        catch (JsonException)
-        {
-            return line;
-        }
-
-        static string SafeString(JsonElement element, string name)
-            => element.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-
-        static string Truncate(string text)
-        {
-            text = text.ReplaceLineEndings(" ").Trim();
-            return text.Length <= 120 ? text : text[..120] + "…";
-        }
-
-        static string BuildToolSummary(JsonElement root)
-        {
-            var tool = SafeString(root, "tool");
-            var status = SafeString(root, "status");
-            var label = SafeString(root, "label");
-            var err = SafeString(root, "err");
-            var head = string.IsNullOrWhiteSpace(label) ? tool : $"{tool}: {label}";
-            return status switch
-            {
-                "done" => $"[tool] {Truncate(head)} ✓",
-                "error" => $"[tool] {Truncate(head)} ✗ {Truncate(err)}",
-                _ => $"[tool] {Truncate(head)} …"
-            };
-        }
-    }
 }

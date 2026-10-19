@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AspireCTF.Api.Endpoints;
 using AspireCTF.Api.Hubs;
 using AspireCTF.Api.Models;
 using AspireCTF.Api.Queue;
@@ -53,6 +54,7 @@ builder.Services.AddSingleton<LogBufferService>();
 builder.Services.AddSingleton<PersistentTaskLogService>();
 builder.Services.AddSingleton<WorkspaceService>();
 builder.Services.AddSingleton<TaskBroadcaster>();
+builder.Services.AddSingleton<TaskSubmissionService>();
 
 builder.Services.AddSingleton<DockerApiSandboxExecutor>();
 builder.Services.AddSingleton<PodmanCliSandboxExecutor>();
@@ -81,6 +83,8 @@ builder.Services.AddSingleton<ISandboxExecutor>(sp =>
 });
 
 builder.Services.AddSingleton<ChallengeRunnerService>();
+builder.Services.AddSingleton<ChallengePromptBuilder>();
+builder.Services.AddSingleton<SandboxEnvironmentBuilder>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChallengeRunnerService>());
 
 var corsAllowAny = builder.Configuration.GetValue("Cors:AllowAny", true);
@@ -106,62 +110,9 @@ app.MapOpenApi();
 app.MapHub<TaskHub>("/hubs/tasks");
 
 var api = app.MapGroup("/api");
-
-api.MapGet("/settings", (PlatformSettingsService settings) => Results.Ok(settings.ToDto(settings.Current)));
-api.MapGet("/settings/providers", async (ModelsDevCatalogService catalog, CancellationToken ct) =>
-    Results.Ok(await catalog.GetProvidersAsync(ct)));
-api.MapGet("/settings/api-keys", async (PlatformSettingsService settings, CancellationToken ct) => Results.Ok(await settings.GetApiKeysAsync(ct)));
-api.MapPost("/settings/api-keys", async (ApiKeyUpdateRequest request, PlatformSettingsService settings, ModelCatalogService models, CancellationToken ct) =>
-{
-    var saved = await settings.SetApiKeyAsync(request.Provider, request.ApiKey, ct);
-    if (!saved) return Results.BadRequest("Provider 或 API Key 无效");
-    models.Invalidate();
-    return Results.Ok(await settings.GetApiKeysAsync(ct));
-});
-api.MapDelete("/settings/api-keys/{provider}", async (string provider, PlatformSettingsService settings, ModelCatalogService models, CancellationToken ct) =>
-{
-    var removed = await settings.RemoveApiKeyAsync(provider, ct);
-    if (!removed) return Results.NotFound();
-    models.Invalidate();
-    return Results.Ok(await settings.GetApiKeysAsync(ct));
-});
-api.MapGet("/settings/models", async (ModelCatalogService models, CancellationToken ct) => Results.Ok(await models.GetAsync(ct)));
-api.MapGet("/settings/opencode/validate", async (OpenCodeServerService opencode, CancellationToken ct) => Results.Ok(await opencode.ValidateAsync(ct)));
-api.MapGet("/settings/opencode/cli-models", async (OpenCodeServerService opencode, CancellationToken ct) => Results.Ok(await opencode.GetModelsAsync(ct)));
-api.MapPut("/settings", async (PlatformSettingsDto dto, PlatformSettingsService settings, CancellationToken ct) =>
-    Results.Ok(settings.ToDto(await settings.UpdateAsync(dto, ct))));
-
-api.MapGet("/challenges", (IConfiguration configuration) =>
-{
-    var entries = configuration.GetSection("Catalog:Challenges").Get<ChallengeCatalogEntry[]>() ?? [];
-    return Results.Ok(entries);
-});
-
-api.MapGet("/system/info", async (IOptions<SandboxOptions> options, ITaskStore store,
-    ISandboxExecutor executor, ChallengeTaskQueue queue, ChallengeRunnerService runner,
-    [FromServices] PostgresTaskStore postgres, DynamicConcurrencyGate concurrency,
-    SandboxReadinessService sandbox, CancellationToken ct) =>
-{
-    var tasks = await store.ListAsync(ct);
-    var chained = executor as ChainedSandboxExecutor;
-    var readiness = sandbox.GetStatus();
-    return Results.Ok(new SystemInfoDto
-    {
-        Executor = executor.Name,
-        ExecutorAvailable = (await executor.IsAvailableAsync(ct)) ? "yes" : "no",
-        AvailableExecutors = chained?.AvailableNames ?? [executor.Name],
-        MaxConcurrent = concurrency.Limit,
-        Running = runner.RunningCount,
-        QueueLength = queue.Length,
-        TotalTasks = tasks.Count,
-        PostgresConnected = postgres.DatabaseConnected,
-        SandboxImage = options.Value.Image,
-        SandboxReady = readiness.Ready,
-        SandboxStatus = readiness.Status,
-        SandboxMessage = readiness.Message,
-        SandboxBuildOutput = readiness.Output.ToArray()
-    });
-});
+api.MapSettingsEndpoints()
+   .MapSystemEndpoints()
+   .MapCatalogEndpoints(app.Configuration);
 
 api.MapGet("/tasks", async (ITaskStore store, CancellationToken ct) =>
 {
@@ -224,14 +175,11 @@ api.MapPost("/tasks/{id}/continue", async (string id, ContinueTaskRequest reques
     return Results.Accepted($"/api/tasks/{id}", task.ToDto());
 });
 
-api.MapPost("/tasks", async (SubmitTaskRequest request,
-    ITaskStore store, ChallengeTaskQueue queue, WorkspaceService workspaces,
-    TaskBroadcaster broadcaster, IConfiguration configuration, SandboxReadinessService sandbox, CancellationToken ct) =>
-    await SubmitAsync(request, null, store, queue, workspaces, broadcaster, configuration, sandbox, ct));
+api.MapPost("/tasks", async (SubmitTaskRequest request, TaskSubmissionService submission, CancellationToken ct) =>
+    await submission.SubmitAsync(request, null, ct));
 
 api.MapPost("/tasks/upload", async (HttpRequest httpRequest,
-    ITaskStore store, ChallengeTaskQueue queue, WorkspaceService workspaces,
-    TaskBroadcaster broadcaster, IConfiguration configuration, SandboxReadinessService sandbox, CancellationToken ct) =>
+    TaskSubmissionService submission, CancellationToken ct) =>
 {
     if (!httpRequest.HasFormContentType)
     {
@@ -252,7 +200,7 @@ api.MapPost("/tasks/upload", async (HttpRequest httpRequest,
     };
 
     var file = form.Files.GetFile("source");
-    return await SubmitAsync(request, file?.OpenReadStream(), store, queue, workspaces, broadcaster, configuration, sandbox, ct);
+    return await submission.SubmitAsync(request, file?.OpenReadStream(), ct);
 });
 
 api.MapDelete("/tasks/{id}", async (string id, string? user, ITaskStore store, ChallengeRunnerService runner,
@@ -313,95 +261,3 @@ app.Run();
 static bool CanManageTask(ChallengeTask task, string? user)
     => string.Equals(task.CreatedBy, user, StringComparison.OrdinalIgnoreCase)
        || string.Equals(user, "admin", StringComparison.OrdinalIgnoreCase);
-
-async Task<IResult> SubmitAsync(
-    SubmitTaskRequest request,
-    Stream? zipStream,
-    ITaskStore store,
-    ChallengeTaskQueue queue,
-    WorkspaceService workspaces,
-    TaskBroadcaster broadcaster,
-    IConfiguration configuration,
-    SandboxReadinessService sandbox,
-    CancellationToken ct)
-{
-    var readiness = sandbox.GetStatus();
-    if (!readiness.Ready)
-    {
-        return Results.Json(new { error = readiness.Message, status = readiness.Status }, statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    if (string.IsNullOrWhiteSpace(request.Model))
-    {
-        return Results.BadRequest("必须选择模型");
-    }
-    if (string.IsNullOrWhiteSpace(request.Name) && string.IsNullOrWhiteSpace(request.ChallengeId))
-    {
-        return Results.BadRequest("必须提供 name 或 challengeId");
-    }
-
-    ChallengeCatalogEntry? catalogEntry = null;
-    string? catalogSourcePath = null;
-    if (!string.IsNullOrWhiteSpace(request.ChallengeId))
-    {
-        var catalog = configuration.GetSection("Catalog:Challenges").Get<ChallengeCatalogEntry[]>() ?? [];
-        catalogEntry = catalog.FirstOrDefault(c => string.Equals(c.Id, request.ChallengeId, StringComparison.OrdinalIgnoreCase));
-        if (catalogEntry is null)
-        {
-            return Results.BadRequest($"题库中不存在 challengeId={request.ChallengeId}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(catalogEntry.SourcePath))
-        {
-            var samplesRoot = configuration["Catalog:SamplesPath"] ?? "/opt/catalog";
-            var candidate = Path.GetFullPath(Path.Combine(samplesRoot, catalogEntry.SourcePath));
-            if (Directory.Exists(candidate))
-            {
-                catalogSourcePath = candidate;
-            }
-        }
-    }
-
-    var task = new ChallengeTask
-    {
-        Id = Guid.NewGuid().ToString("N"),
-        Name = request.Name ?? catalogEntry?.Name ?? catalogEntry?.Id ?? "unnamed",
-        CreatedBy = string.IsNullOrWhiteSpace(request.CreatedBy) ? "admin" : request.CreatedBy.Trim(),
-        Category = string.IsNullOrWhiteSpace(request.Category) ? catalogEntry?.Category ?? "web" : request.Category,
-        Description = string.IsNullOrWhiteSpace(request.Description) ? catalogEntry?.Description ?? "" : request.Description,
-        TargetUrl = string.IsNullOrWhiteSpace(request.TargetUrl) ? catalogEntry?.TargetUrl ?? "" : request.TargetUrl,
-        Prompt = string.IsNullOrWhiteSpace(request.Prompt) ? catalogEntry?.DefaultPrompt ?? "" : request.Prompt,
-        Model = request.Model?.Trim() ?? "",
-        ChallengeId = request.ChallengeId ?? "",
-        HasSource = zipStream is not null || catalogSourcePath is not null,
-        Status = ChallengeTaskStatus.Pending
-    };
-
-    try
-    {
-        await workspaces.PrepareAsync(task, zipStream, catalogSourcePath, ct);
-    }
-    catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
-    {
-        return Results.BadRequest(ex.Message);
-    }
-
-    // 先持久化再入队：runner 消费极快，若先入队会出现 GetAsync 竞态返回 null
-    task.Status = ChallengeTaskStatus.Pending;
-    await store.SaveAsync(task, ct);
-
-    if (!queue.TryEnqueue(task.Id))
-    {
-        task.Status = ChallengeTaskStatus.Failed;
-        task.Error = "任务队列已满，请稍后再试";
-        task.CompletedAt = DateTimeOffset.UtcNow;
-        await store.SaveAsync(task, ct);
-        workspaces.Cleanup(task.Id);
-        return Results.Json(task.ToDto(), statusCode: StatusCodes.Status429TooManyRequests);
-    }
-
-    task.Status = ChallengeTaskStatus.Queued;
-    await broadcaster.TaskUpdatedAsync(task, ct);
-    app.Logger.LogInformation("新任务 {TaskId} 已入队：{Name} → {Target}", task.Id, task.Name, task.TargetUrl);
-
-    return Results.Accepted($"/api/tasks/{task.Id}", task.ToDto());
-}
