@@ -4,7 +4,7 @@ setlocal
 REM ==========================================================
 REM  AspireCTF - 一键部署（薄封装）
 REM  本地无仓库时 git clone 到 .\aspirectf，然后调用 start.bat 完成部署
-REM  一键运行命令见 README.md
+REM  一键运行命令见 README.md（Windows 使用 PowerShell Invoke-WebRequest）
 REM ==========================================================
 cd /d "%~dp0"
 

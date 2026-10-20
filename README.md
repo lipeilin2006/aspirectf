@@ -81,10 +81,10 @@ podman build -t ctf-opencode-sandbox:latest sandbox/
 curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.sh | sed 's/\r$//' | bash
 ```
 
-Windows（cmd，下载 `deploy.bat` 到当前目录并运行）：
+Windows（cmd，使用系统自带 PowerShell 下载并运行）：
 
 ```bat
-curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat -o deploy.bat && deploy.bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat' -OutFile 'deploy.bat'" && deploy.bat
 ```
 
 脚本流程：检测 Docker / Git 环境 → 本地无仓库时 `git clone` 到当前目录的 `aspirectf/`（已有则 `git pull` 更新；已在仓库目录内则直接用本地文件）→ 调用 `start` 完成 `.env` 生成、镜像构建与启动。端口（`WEB_PORT` 等）与 AI 密钥在 `deploy/.env` 中配置。
@@ -97,10 +97,10 @@ curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat -o deploy.ba
 curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.sh | sed 's/\r$//' | bash
 ```
 
-Windows（cmd）：
+Windows（cmd，使用系统自带 PowerShell）：
 
 ```bat
-curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.bat -o update.bat && update.bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/update.bat' -OutFile 'update.bat'" && update.bat
 ```
 
 更新脚本会执行 `git pull --ff-only`，本地存在未提交修改或冲突时会停止，不会覆盖本地代码。

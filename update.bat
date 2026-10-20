@@ -4,7 +4,7 @@ setlocal
 REM ==========================================================
 REM  AspireCTF - 更新脚本
 REM  git pull 最新代码，然后调用 start.bat 重建并启动
-REM  一键运行命令见 README.md
+REM  一键运行命令见 README.md（Windows 使用 PowerShell Invoke-WebRequest）
 REM ==========================================================
 cd /d "%~dp0"
 
