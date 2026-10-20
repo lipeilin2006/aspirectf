@@ -1,5 +1,35 @@
 # AspireCTF — CTF 自动化解题平台
 
+## 快速部署
+
+### Linux
+
+```bash
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.sh | sed 's/\r$//' | bash
+```
+
+### Windows
+
+在 `cmd` 中执行，使用系统自带 PowerShell 下载脚本：
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat' -OutFile 'deploy.bat'" && deploy.bat
+```
+
+更新已有部署：
+
+```bash
+curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.sh | sed 's/\r$//' | bash
+```
+
+Windows：
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/update.bat' -OutFile 'update.bat'" && update.bat
+```
+
+脚本会从 Gitee clone/update 仓库到当前目录的 `aspirectf/`，然后调用 `start` 完成配置、镜像构建和启动。默认访问地址：Web `http://localhost:8080`，示例靶场 `http://localhost:8088/login`，Dashboard `http://localhost:18888`。
+
 当前 Web UI 使用 MudBlazor，默认登录账号为 `admin` / `admin`。任务信息由 PostgreSQL 持久化保存，包括题目详情、模型、状态、Flag、执行器和 Podman 容器编号。
 
 基于 .NET Aspire + ASP.NET Core Blazor 的 AI 驱动 CTF 解题平台：每个任务在一题一容器的隔离沙箱中运行 [OpenCode CLI](https://opencode.ai)，实时流式回传日志，正则捕获 Flag。
@@ -75,35 +105,7 @@ podman build -t ctf-opencode-sandbox:latest sandbox/
 
 ## Docker Compose 部署（无 Aspire / .NET SDK）
 
-一键部署（全新服务器 / 任意目录，自动下载仓库到当前目录的 `aspirectf/`）：
-
-```bash
-curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/deploy.sh | sed 's/\r$//' | bash
-```
-
-Windows（cmd，使用系统自带 PowerShell 下载并运行）：
-
-```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/deploy.bat' -OutFile 'deploy.bat'" && deploy.bat
-```
-
-脚本流程：检测 Docker / Git 环境 → 本地无仓库时 `git clone` 到当前目录的 `aspirectf/`（已有则 `git pull` 更新；已在仓库目录内则直接用本地文件）→ 调用 `start` 完成 `.env` 生成、镜像构建与启动。端口（`WEB_PORT` 等）与 AI 密钥在 `deploy/.env` 中配置。
-
-更新已有部署：
-
-```bash
-./update.sh
-# 或从任意目录执行：
-curl -fsSL https://gitee.com/li_pilit/aspirectf/raw/main/update.sh | sed 's/\r$//' | bash
-```
-
-Windows（cmd，使用系统自带 PowerShell）：
-
-```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing 'https://gitee.com/li_pilit/aspirectf/raw/main/update.bat' -OutFile 'update.bat'" && update.bat
-```
-
-更新脚本会执行 `git pull --ff-only`，本地存在未提交修改或冲突时会停止，不会覆盖本地代码。
+部署、更新和 Windows/Linux 一键命令见文档顶部的「快速部署」章节。
 
 手动启动（已克隆仓库）：
 
