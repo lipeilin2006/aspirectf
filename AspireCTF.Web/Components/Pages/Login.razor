@@ -7,9 +7,9 @@
     <MudPaper Class="login-card" Elevation="8">
         <MudText Typo="Typo.h4" Class="mb-2">AspireCTF</MudText>
         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">OpenCode 自动解题平台</MudText>
-        @if (_error)
+        @if (_error is not null)
         {
-            <MudAlert Severity="Severity.Error" Class="mb-4">用户名或密码错误或请求验证失败</MudAlert>
+            <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
         }
         <form method="post" action="/account/login" onsubmit="return ctf.prepareLogin(this)">
             <input type="hidden" name="returnUrl" value="@ReturnUrl" />
@@ -32,6 +32,12 @@
     [SupplyParameterFromQuery(Name = "error")]
     private string? Error { get; set; }
 
-    private bool _error => Error is "1" or "pow";
+    private string? _error => Error switch
+    {
+        "pow" => "请求验证失败，请刷新页面后重试",
+        "1" => "用户名或密码错误",
+        _ => null
+    };
+
     private string _powNonce { get; } = Guid.NewGuid().ToString("N");
 }
